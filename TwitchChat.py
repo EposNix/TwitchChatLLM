@@ -17,8 +17,9 @@ from tkinter import ttk
 # ===========================
 # Config (tweak as you like)
 # ===========================
-API_URL = "http://127.0.0.1:1234/v1/chat/completions"
-MODEL = "gemma-3-12b-it-qat"          # matches your curl example
+#API_URL = "http://127.0.0.1:1234/v1/chat/completions"
+API_URL = "http://localhost:11434/api/generate"
+MODEL = "gemma3:12b"          # matches your curl example
 INTERVAL_SEC = 3.0                     # how often to generate a new line
 HISTORY_LEN = 20                       # number of previous chat lines to include as context
 TEMPERATURE = 0.7
@@ -69,12 +70,12 @@ def get_screen_data_url(max_w=1024, max_h=1024):
         # Return both the data URL and a copy of the image for debugging
         img_copy = img.copy()
         del img
-        return f"data:image/png;base64,{b64}", img_copy
+        return b64, img_copy
 
 # ===========================
 # LLM call
 # ===========================
-def llm_generate_line(screen_data_url, recent_chat):
+def llm_generate_line(screen_b64, recent_chat):
     # Build a compact "recent chat" text block
     if recent_chat:
         recent = "\n".join(recent_chat)
@@ -87,29 +88,25 @@ def llm_generate_line(screen_data_url, recent_chat):
         "Now produce exactly ONE new Twitch-style chat line reacting to the screenshot."
     )
 
+    prompt = SYSTEM_INSTRUCTIONS + "\n\n" + user_text
+
     payload = {
         "model": MODEL,
-        "messages": [
-            {"role": "system", "content": [{"type": "text", "text": SYSTEM_INSTRUCTIONS}]},
-            {
-                "role": "user",
-                "content": [
-                    {"type": "text", "text": user_text},
-                    {"type": "image_url", "image_url": {"url": screen_data_url}}
-                ]
-            }
-        ],
-        "temperature": TEMPERATURE,
-        "max_tokens": MAX_TOKENS,
+        "prompt": prompt,
+        "images": [screen_b64],
+        "options": {
+            "temperature": TEMPERATURE,
+            "num_predict": MAX_TOKENS
+        },
         "stream": STREAM
     }
 
     resp = requests.post(API_URL, json=payload, timeout=60)
     resp.raise_for_status()
     data = resp.json()
-    # LM Studio OpenAI-compatible output
+    # Ollama generate output
     try:
-        content = data["choices"][0]["message"]["content"].strip()
+        content = data["response"].strip()
     except Exception as e:
         content = f"(error parsing response: {e})"
     return content
@@ -245,8 +242,8 @@ class TwitchChatUI:
     def _loop(self):
         while self.running:
             try:
-                # 1) Capture screen -> base64 data URL + PIL image for debug
-                data_url, screenshot_img = get_screen_data_url()
+                # 1) Capture screen -> base64 + PIL image for debug
+                b64, screenshot_img = get_screen_data_url()
 
                 # Store screenshot for debugging
                 if DEBUG_SCREENSHOT:
@@ -255,9 +252,9 @@ class TwitchChatUI:
                     self.root.after(0, self._update_debug_display)
 
                 # 2) Call LLM
-                line = llm_generate_line(data_url, list(self.recent_chat))
-                # 3) Immediately discard screenshot data_url (and any buffers already freed in helper)
-                del data_url
+                line = llm_generate_line(b64, list(self.recent_chat))
+                # 3) Immediately discard b64 (and any buffers already freed in helper)
+                del b64
 
                 # 4) Compose a Twitchy line (add random username/color)
                 username = random.choice(USERNAME_POOL) + str(random.randint(1, 999))

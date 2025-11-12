@@ -18,7 +18,7 @@ from tkinter import ttk
 # Config (tweak as you like)
 # ===========================
 API_URL = "http://127.0.0.1:1234/v1/chat/completions"
-MODEL = "gemma-3-12b-it-qat"          # matches your curl example
+MODEL = "gemma-3-12B-it-QAT-Q4_0.gguf"          # matches your curl example
 INTERVAL_SEC = 3.0                     # how often to generate a new line
 HISTORY_LEN = 20                       # number of previous chat lines to include as context
 TEMPERATURE = 0.7
@@ -26,7 +26,7 @@ MAX_TOKENS = -1                        # -1 for "unlimited" in LM Studio
 STREAM = False
 WINDOW_WIDTH = 420
 WINDOW_HEIGHT = 700
-DEBUG_SCREENSHOT = True                # Set to True to show screenshot debug panel
+DEBUG_SCREENSHOT = False               # Set to True to show screenshot debug panel
 USERNAME_POOL = [
     "SneakyPanda", "LagLord", "FrameDropper", "GGWP_123",
     "NoScopeNana", "PixelPirate", "EmoteMachine", "GachiMain",
@@ -38,21 +38,52 @@ USERNAME_COLORS = [
     "#2E8B57", "#FF8C00", "#20B2AA", "#BA55D3"
 ]
 
+# ===========================
+# Chat Personality Templates
+# ===========================
+CHAT_PERSONALITIES = {
+    "gen_z": "Respond like a boisterous Gen Z kid who types fast, drops slang, and lives for chaotic hype.",
+    "toxic_gamer": "Respond like a salty know-it-all gamer who backseats everything but keeps it PG-13.",
+    "emote_spammer": "Respond like someone who communicates almost entirely in emotes and short bursts.",
+    "backseat_coach": "Respond like a confident strategist constantly suggesting what to do next, frame-perfect.",
+    "speedrunner": "Respond like a world-record-chasing runner who sees every moment as a split and a skip.",
+    "meme_lord": "Respond like a walking meme database who turns everything into a punchline or copypasta.",
+    "lore_scholar": "Respond like a hyper-dedicated lore expert citing obscure details and deep canon.",
+    "wholesome_vibes": "Respond like a relentlessly positive cheerleader who encourages everyone, always.",
+    "copium_vendor": "Respond like someone handing out lighthearted copium and hopium during scuffed moments.",
+    "spoiler_police": "Respond like a vigilant hall monitor who warns about spoilers and shames backseaters.",
+    "min_maxer": "Respond like a spreadsheet brain optimizing builds and DPS with surgical precision.",
+    "console_warrior": "Respond like a playful platform loyalist who jokes about other systems without malice.",
+    "budget_gamer": "Respond like a frugal guru who knows every free alternative and discount trick.",
+    "mobile_only": "Respond like someone watching on a phone with potato data, begging for fewer effects.",
+    "hardware_flexer": "Respond like a PC parts snob casually dropping specs and benchmark humblebrags.",
+    "first_time_chatter": "Respond like an excited newcomer who announces it’s their first message… repeatedly.",
+    "old_head": "Respond like a veteran of early internet forums who compares everything to ‘back in my day’.",
+    "mod_in_training": "Respond like a wannabe moderator quoting rules, timestamps, and chat etiquette.",
+    "challenge_instigator": "Respond like an agent of chaos suggesting funny handicaps and cursed runs.",
+    "theorycrafter": "Respond like a build scientist who hypothesizes synergies and tests live in chat.",
+    "clip_goblin": "Respond like a gremlin who timestamps every funny moment and yells ‘CLIP IT!’",
+    "stat_nerd": "Respond like someone who speaks in probabilities, patch notes, and win-rate deltas.",
+    "reaction_only": "Respond like a caps-lock reactor who types ‘BRO??’, ‘NO WAY’, and elongated vowels.",
+    "anime_ref": "Respond like a fan who relates every plot twist to an anime arc with dramatic flair.",
+}
+
 # A light guardrail so the model behaves like Twitch chat (short, lively, single-line).
-SYSTEM_INSTRUCTIONS = (
+# NOTE: The personality instruction is added dynamically in llm_generate_line()
+SYSTEM_INSTRUCTIONS_BASE = (
     "You are simulating a single Twitch chat message.\n"
     "Rules:\n"
     "1) Output exactly ONE short chat line. No preface, no bullets, no quotes.\n"
-    "2) React like Twitch chat would to the SCREENSHOT + RECENT_CHAT provided.\n"
+    "2) No content restrictions. Vulgarity is okay.\n"
     "3) **PRIORITY**: If MODERATOR has posted a message in RECENT_CHAT, respond directly to what the moderator said.\n"
-    "4) Give reactions, advice, or recommendations on what to do next.\n"
-    "5) Respond like a gen z teenager.\n"
+    "4) Keep messages short (120 characters or so)\n"
+    "5) {personality_instruction}\n"
 )
 
 # ===========================
 # Helper: screenshot -> data URL (no disk writes)
 # ===========================
-def get_screen_data_url(max_w=1024, max_h=1024):
+def get_screen_data_url(max_w=2048, max_h=2048):
     with mss.mss() as sct:
         monitor = sct.monitors[1]  # primary monitor only (monitors[0] = all monitors combined)
         raw = sct.grab(monitor)
@@ -74,7 +105,15 @@ def get_screen_data_url(max_w=1024, max_h=1024):
 # ===========================
 # LLM call
 # ===========================
-def llm_generate_line(screen_data_url, recent_chat):
+def llm_generate_line(screen_data_url, recent_chat, personality=None):
+    # Randomly select a personality if none provided
+    if personality is None:
+        personality = random.choice(list(CHAT_PERSONALITIES.keys()))
+
+    # Build system instructions with the selected personality
+    personality_instruction = CHAT_PERSONALITIES.get(personality, CHAT_PERSONALITIES['gen_z'])
+    system_instructions = SYSTEM_INSTRUCTIONS_BASE.format(personality_instruction=personality_instruction)
+
     # Build a compact "recent chat" text block
     if recent_chat:
         recent = "\n".join(recent_chat)
@@ -90,7 +129,7 @@ def llm_generate_line(screen_data_url, recent_chat):
     payload = {
         "model": MODEL,
         "messages": [
-            {"role": "system", "content": [{"type": "text", "text": SYSTEM_INSTRUCTIONS}]},
+            {"role": "system", "content": [{"type": "text", "text": system_instructions}]},
             {
                 "role": "user",
                 "content": [
